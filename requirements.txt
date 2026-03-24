@@ -62,3 +62,11 @@ uvicorn==0.40.0
 xxhash==3.6.0
 yarl==1.22.0
 zstandard==0.25.0
+pandas
+sentence-transformers
+faiss-cpu
+sentence-transformers
+langchain-huggingface
+streamlit
+langchain-openai
+langchain-ollama

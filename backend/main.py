@@ -3,21 +3,27 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pathlib import Path
 from pydantic import BaseModel
+from contextlib import asynccontextmanager
 import os
 import json
-from backend import agent
+from backend.agent import agent
+from backend.rag.retriever import setup_retriever
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 key = os.getenv("GROQ_API_KEY")
-print("KEY REPR:", repr(key))
-print("KEY LEN:", len(key) if key else None)
-
-print("GROQ_API_KEY =", os.getenv("GROQ_API_KEY"))
-
 FRONTEND_DIR = BASE_DIR / 'frontend'
 
-app = FastAPI()
-app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
+retriever = None 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global retriever
+    retriever = setup_retriever()
+    yield
+
+app = FastAPI(lifespan=lifespan)
+
+app.mount("/static", StaticFiles(directory=FRONTEND_DIR / "static"), name="static")
 
 @app.get("/")
 def home():
@@ -29,8 +35,37 @@ class ChatRequest(BaseModel):
 
 @app.post("/chat")
 async def chat(request: ChatRequest):
-    result = agent.agent.invoke({
-        "messages": [{"role": "user", "content": request.message}]
+    pergunta = request.message
+
+    docs = retriever.invoke(pergunta)
+
+    contexto = "\n\n".join([
+        f"Título: {d.metadata.get('titulo')}\n{d.page_content}"
+        for d in docs
+    ])
+
+    mensagem_com_contexto = f"""
+    Você deve usar o contexto abaixo para responder perguntas sobre a Secretaria de Saúde.
+    Se a pergunta for sobre localização, UBS ou mapa, use as ferramentas disponíveis.
+    Sempre cite a fonte da informação quando possível, especialmente se for uma notícia ou um dado específico de uma UBS.
+    Se a informação estiver relacionada a uma notícia, mencione o título da notícia.
+    Nunca mencione informações do backend, como nome de funções ou arquivos de onde os dados foram carregados. Foque apenas no conteúdo e na fonte (ex: "notícia do DODF", "dados da UBS X", etc).
+    Quando possível, adicione o link para a informação, especialmente se for uma notícia. Se o dado for de uma UBS, mencione o nome da UBS como fonte.
+    Se a pergunta envolver quantidade de UBS, lista de UBS ou UBS por região,
+    utilize as ferramentas disponíveis para obter os dados mais precisos.
+
+    
+    Contexto do DODF:
+    {contexto}
+
+    Pergunta do usuário:
+    {pergunta}
+    """
+
+    result = agent.invoke({
+        "messages" : [
+            {"type": "human", "content": mensagem_com_contexto}
+        ]
     })
 
     messages = result["messages"]
@@ -61,7 +96,11 @@ async def chat(request: ChatRequest):
                 response["action"] = "clear_map"
                 response["points"] = []
 
-        if msg.type == "ai" and msg.content: 
-            response["message"] = msg.content
+        if msg.type == "ai":
+            if hasattr(msg, "tool_calls") and msg.tool_calls:
+                continue
+
+            if msg.content:
+                response["message"] = msg.content
 
     return response

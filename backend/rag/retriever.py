@@ -1,97 +1,40 @@
-import os
-import json
-from langchain_community.embeddings import HuggingFaceBgeEmbeddings
+from langchain_text_splitters import CharacterTextSplitter
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_core.documents import Document
+from backend.rag.load_docs import load_documents
+import logging
+import os
 
-def flatten_ses(json_data):
-    documentos = []
+logger = logging.getLogger(__name__)
 
-    try:
-        secoes = json_data["diario"]["json"]["INFO"]
-    except KeyError:
-        print("Estrutura inesperada no JSON.")
-        return []
+DB_PATH = "faiss_index"
 
-    for nome_secao, secao in secoes.items():
-
-        # verifica se SES existe nessa seção
-        ses = secao.get("Secretaria de Estado de Saúde")
-        if not ses:
-            continue
-
-        docs = ses.get("documentos", {})
-
-        for doc_id, doc in docs.items():
-            titulo = doc.get("titulo", "")
-            preambulo = doc.get("preambulo", "")
-            texto = doc.get("texto", "")
-
-            conteudo = f"""
-            TÍTULO: {titulo}
-
-            PREÂMBULO:
-            {preambulo}
-
-            TEXTO:
-            {texto}
-            """.strip()
-
-            if conteudo:
-                documentos.append(
-                    Document(
-                        page_content=conteudo,
-                        metadata={
-                            "titulo": titulo,
-                            "id": doc_id.strip(),
-                            "secao": nome_secao
-                        }
-                    )
-                )
-
-    return documentos
-    
-
-
-def load_documents(folder="backend/rag/source"):
-    docs = []
-
-    for filename in os.listdir(folder):
-        if filename.endswith(".json"):
-            path = os.path.join(folder, filename)
-
-            with open(path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-
-            text = data.get("texto", "")
-            title = data.get("texto", filename)
-
-            docs.append(
-                Document(
-                    page_content=text,
-                    metadata={"titulo": title}
-                )
-            )
-
-    return docs
-
-def create_retriever():
-    docs = load_documents()
-
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=500,
-        chunk_overlap=100
-    )
-
-    split_docs = splitter.split_documents(docs)
-
-    embeddings = HuggingFaceBgeEmbeddings(
+def setup_retriever():
+    embeddings = HuggingFaceEmbeddings(
         model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
     )
 
-    db = FAISS.from_documents(split_docs, embeddings)
+    index_file = os.path.join(DB_PATH, "index.faiss")
 
-    return db.as_retriever(search_kwargs={"k": 4})
+    if os.path.exists(index_file):
+        db = FAISS.load_local(
+            DB_PATH,
+            embeddings,
+            allow_dangerous_deserialization=True
+        )
+    else:
+        docs = load_documents()
 
-retriever = create_retriever()
+        splitter = CharacterTextSplitter(
+            chunk_size=600,
+            chunk_overlap=80
+        )
+
+        chunks = splitter.split_documents(docs)
+
+        db = FAISS.from_documents(chunks, embedding=embeddings)
+
+        os.makedirs(DB_PATH, exist_ok=True)
+        db.save_local(DB_PATH)
+
+    return db.as_retriever(search_kwargs={"k": 5})
