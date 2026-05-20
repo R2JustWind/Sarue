@@ -26,10 +26,46 @@ document.addEventListener("DOMContentLoaded", () => {
   const messages = document.getElementById("messages");
 
   let markers = [];
+  let sectorLayers = [];
 
   function clearMap() {
     markers.forEach(marker => map.removeLayer(marker));
     markers = [];
+
+    clearSectors();
+  }
+
+  function clearSectors() {
+    sectorLayers.forEach(layer => map.removeLayer(layer));
+    sectorLayers = [];
+  }
+
+  function drawSectorLayer(geojsonFeatures) {
+    clearSectors();
+
+    const layer = L.geoJSON(geojsonFeatures, {
+      style: {
+        color: "#ff0000",
+        weight: 2,
+        fillOpacity: 0.3
+      },
+
+      onEachFeature: function(feature, layer) {
+        const props = feature.properties || {};
+
+        layer.bindPopup(`
+          <b>Setor:</b> ${props.CD_SETOR || "N/A"}<br>
+          <b>Região:</b> ${props.NM_SUBDIST || "N/A"}
+        `)
+      }
+    }).addTo(map);
+
+    sectorLayers.push(layer);
+
+    console.log("GeoJSON adicionado ao mapa:", geojsonFeatures);
+    console.log(layer);
+
+    map.fitBounds(layer.getBounds());
   }
 
  function addMarkers(points) {
@@ -130,6 +166,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     const data = await response.json();
+    console.log(data);
     if (data.type === "map_action") {
       if (data.action === "add_markers") {
         addMarkers(data.points);
@@ -137,7 +174,17 @@ document.addEventListener("DOMContentLoaded", () => {
 
       if (data.action === "clear_map") {
         clearMap();
+        clearSectors();
       }
+
+      if(data.action === "clear_sectors") {
+        clearSectors();
+      }
+
+      if (data.action === "draw_sector_layer") {
+        drawSectorLayer(data.geojson);
+      }
+
       answerEffect(bubble, data.message);
     } else {
       answerEffect(bubble, data.message || data.resposta);

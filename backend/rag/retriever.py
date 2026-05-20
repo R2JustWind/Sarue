@@ -1,4 +1,4 @@
-from langchain_text_splitters import CharacterTextSplitter
+from langchain_text_splitters import CharacterTextSplitter, RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 from backend.rag.load_docs import load_documents
@@ -11,7 +11,7 @@ DB_PATH = "faiss_index"
 
 def setup_retriever():
     embeddings = HuggingFaceEmbeddings(
-        model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+        model_name="rufimelo/Legal-BERTimbau-sts-large"
     )
 
     index_file = os.path.join(DB_PATH, "index.faiss")
@@ -25,7 +25,7 @@ def setup_retriever():
     else:
         docs = load_documents()
 
-        splitter = CharacterTextSplitter(
+        splitter = RecursiveCharacterTextSplitter(
             chunk_size=600,
             chunk_overlap=80
         )

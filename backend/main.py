@@ -53,6 +53,7 @@ async def chat(request: ChatRequest):
     Quando possível, adicione o link para a informação, especialmente se for uma notícia. Se o dado for de uma UBS, mencione o nome da UBS como fonte.
     Se a pergunta envolver quantidade de UBS, lista de UBS ou UBS por região,
     utilize as ferramentas disponíveis para obter os dados mais precisos.
+    Você também pode desenhar setores censitários no mapa quando o usuário pedir setores, regiões administrativas ou áreas geográficas.
 
     
     Contexto do DODF:
@@ -74,9 +75,10 @@ async def chat(request: ChatRequest):
         "type": "chat",
         "action": None,
         "points": [],
+        "geojson": None,
         "message": ""
     }
-
+    control = False
     for msg in messages:
         print("TYPE:", msg.type)
         print("CONTENT:", msg.content)
@@ -95,6 +97,22 @@ async def chat(request: ChatRequest):
                 response["type"] = "map_action"
                 response["action"] = "clear_map"
                 response["points"] = []
+
+            elif isinstance(tool_output, dict) and control == False:
+                try:
+                    if tool_output.get("action") == "clear_sectors":
+                        response["type"] = "map_action"
+                        response["action"] = "clear_sectors"
+                    if tool_output.get("response_type") == "map_geojson":
+                        response["type"] = "map_action"
+                        response["action"] = "draw_sector_layer"
+                        response["geojson"] = tool_output["geojson"]
+                        control = True
+
+                except Exception as e:
+                    print("ERRO JSON:", e)
+                    print(msg.content)
+                    tool_output = None
 
         if msg.type == "ai":
             if hasattr(msg, "tool_calls") and msg.tool_calls:
