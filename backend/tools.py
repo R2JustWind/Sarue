@@ -8,6 +8,9 @@ import requests
 from backend.utils.load_sectors import load_sectors
 from backend.utils.ubs_to_gdf import load_ubs_gdf
 from shapely.geometry import mapping
+import os
+import pandas as pd
+import glob
 
 UBS_DB = load_ubs()
 
@@ -57,6 +60,71 @@ def geocode_location(query: str):
     cache[query] = (lat, lon)
 
     return lat, lon
+
+@tool
+def mapear_hospitais_dengue(regiao: str = ""):
+    """
+    Retorna e desenha no mapa os hospitais e clínicas onde pacientes com dengue foram internados/atendidos.
+    Use quando o usuário pedir para ver no mapa ONDE os casos de dengue ocorreram.
+    """
+    global points
+    base_dir = os.path.join(os.path.dirname(__file__), "samples")
+
+    busca = os.path.join(base_dir, "samples", "dados_dengue*.csv")
+    arquivos_csv = glob.glob(busca)
+
+    if not arquivos_csv:
+        return json.dumps([])
+    
+    dfs = []
+
+    for arquivo in arquivos_csv:
+        try:
+            df_temp = pd.read_csv(arquivo, sep=";", engine="python", encoding="utf-8", on_bad_lines="skip")
+            dfs.append(df_temp)
+        except Exception as e:
+            print(f"Erro ao ler o arquivo {arquivo}: {e}")
+            continue
+
+    if not dfs:
+        return json.dumps([])
+        
+    df = pd.concat(dfs, ignore_index=True)
+
+    if regiao and regiao.strip:
+        regiao_norm = normalize(regiao)
+        if regiao_norm not in ["todas", "todos", "df", "distrito federal"]:
+            mask = df.apply(lambda row: regiao_norm in normalize(str(row.get('i_desc_radf_res', ''))) or
+                                        regiao_norm in normalize(str(row.get('i_desc_estab_cnes_notif', ''))), axis=1)
+            df = df[mask]
+
+    if df.empty:
+        return json.dumps([])
+        
+    hospitais_unicos = df['i_desc_estab_cnes_notif'].dropna().unique()
+    novos_pontos = []
+
+    for hospital in hospitais_unicos:
+        if hospital.lower() in ["não informado", "ignorado", "outros", "outro"]:
+            continue
+        coords = geocode_location(hospital)
+
+        if coords:
+            lat, lng = coords
+            qtd_pacientes = len(df[df['i_desc_estab_cnes_notif'] == hospital])
+
+            novos_pontos.append({
+                "lat": lat,
+                "lng": lng,
+                "label": hospital,
+                "obs": f"Casos de dengue atendidos: {qtd_pacientes}",
+                "endereco": ""
+            })
+
+    points = novos_pontos
+    return json.dumps(points)
+    
+
 
 @tool
 def remove_ubs_by_name(nome: str):
@@ -232,17 +300,17 @@ def find_interest_place(query: str):
     coords = geocode_location(query)
     
     if not coords:
-        return json.dumps({})
+        return json.dumps([])
     
     lat, lng = coords
 
-    return json.dumps({
+    return json.dumps([{
         "lat": lat,
         "lng": lng,
         "label": query,
         "obs": "",
         "endereco": ""
-    })
+    }])
 
 @tool 
 def find_nearby_ubs(limit: Union[int, str] = 5):

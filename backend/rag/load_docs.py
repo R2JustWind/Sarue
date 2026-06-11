@@ -8,6 +8,7 @@ import json
 def load_documents():
     base_dir = os.path.join(os.path.dirname(__file__), "samples")
     paths = ["noticias_ses_1_100.csv", "fiocruz_noticias.csv", "min_saude.csv", "noticias_dodf.csv"]
+    dengue_paths = ["dados_dengue-18052026-ano_2025.csv", "dados_dengue-18052026-ano_2026.csv"]
 
     documents = []
 
@@ -61,5 +62,42 @@ def load_documents():
                     )
                 )
 
+    for path in dengue_paths:
+        dengue_path = os.path.join(base_dir, path)
+        if os.path.exists(dengue_path):
+            df_dengue = pd.read_csv(dengue_path, sep=";", engine="python", on_bad_lines="skip", encoding="utf-8")
+
+            for _, row in df_dengue.iterrows():
+                classificacao = str(row.get("i_class_final", ""))
+                doenca = str(row.get("i_desc_classificacao", ""))
+                hospital = str(row.get("i_desc_estab_cnes_notif", ""))
+                evolucao = str(row.get("i_desc_evolucao", ""))
+                regiao = str(row.get("i_desc_radf_res", ""))
+                faixa_etaria = str(row.get("i_faixa_etaria", ""))
+                sexo = str(row.get("i_sexo", ""))
+                ano = str(row.get("i_ano_prim_sintomas", ""))
+
+                text = f"""
+                Registro Epidemológico: {doenca}
+                Status do caso: {classificacao}
+                Ano dos Primeiros Sintomas: {ano}
+                Perfil do Paciente: Sexo {sexo}, Faixa Etária {faixa_etaria}
+                Região de Residência (RA): {regiao}
+                Local de Notificação (Hospital/Clínica): {hospital}
+                Evolução do Caso: {evolucao}
+                """
+
+                documents.append(
+                    Document(
+                        page_content=text.strip(),
+                        metadata={
+                            "source": path,
+                            "tipo": "epidemologia",
+                            "doenca": doenca,
+                            "classificacao": regiao,
+                            "ano": ano
+                        }
+                    )
+                )
 
     return documents

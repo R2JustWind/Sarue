@@ -1,4 +1,4 @@
-from langchain_text_splitters import CharacterTextSplitter, RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 from backend.rag.load_docs import load_documents
